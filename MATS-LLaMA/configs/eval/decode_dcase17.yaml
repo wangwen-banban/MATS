@@ -1,0 +1,11 @@
+model:
+  ckpt: "results/MultiTask/audio_free_7B/stage1_model"
+
+datasets:
+  test_ann_path: "../data/DCASE_2017/dcase17_eval.json"
+  save_file: "DCASE_pred"
+  special_token: "[single event]"
+
+run:
+  batch_size_eval: 16
+  evaluate: True 

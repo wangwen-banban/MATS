@@ -1,0 +1,11 @@
+model:
+  ckpt: "results/MultiTask/audio_free_7B/stage1_model"
+
+datasets:
+  test_ann_path: "../data/TUT/tut_eval.json"
+  save_file: "tut_pred"
+  special_token: "[scene event]"
+
+run:
+  batch_size_eval: 16
+  evaluate: True 

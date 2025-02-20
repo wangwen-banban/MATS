@@ -1,0 +1,12 @@
+model:
+  ckpt: "results/MultiTask/audio_free_7B/stage1_model"
+
+datasets:
+  test_ann_path: "../data/ESC-50/esc50.json"
+  # test_ann_path: "../data/ESC-50/esc50_test.json"
+  save_file: "ecs_pred"
+  special_token: "[single event]"
+
+run:
+  batch_size_eval: 16
+  evaluate: True 

@@ -1,0 +1,8 @@
+msclap
+gradio
+unidecode
+omegaconf
+peft
+einops
+tensorboardX
+SentencePiece

@@ -1,0 +1,42 @@
+{
+    "caption": [
+        "<Speech><SpeechHere></Speech> Listen to this audio clip and provide its caption.",
+        "<Speech><SpeechHere></Speech> Describe the following audio in a caption.",
+        "<Speech><SpeechHere></Speech> Based on the sound you hear, create a caption for this audio.",
+        "<Speech><SpeechHere></Speech> What does this audio describe?",
+        "<Speech><SpeechHere></Speech> Please describe the audio."
+    ],
+    "cla_label":[
+        "<Speech><SpeechHere></Speech> Classify audio event for given clip.",
+        "<Speech><SpeechHere></Speech> What noises can you hear? Only extract audio tags.",
+        "<Speech><SpeechHere></Speech> Identify the sounds in the audio clip, only display audio tags.",
+        "<Speech><SpeechHere></Speech> Classify events in the audio clip.",
+        "<Speech><SpeechHere></Speech> Identify audio clip sound, produce only sound tags."
+    ],
+    "audiocaption_v2": [
+        "<Speech><SpeechHere></Speech> Please write down what your hear in the audio."
+    ],
+    "QA": [
+        "<Speech><SpeechHere></Speech> {}"
+    ],
+    "music_description": [
+        "<Speech><SpeechHere></Speech> Listen to this music clip and describe the music.",
+        "<Speech><SpeechHere></Speech> Please describe the music.",
+        "<Speech><SpeechHere></Speech> Provide a description of the music.",
+        "<Speech><SpeechHere></Speech> Analyze the music in this clip and offer a description.",
+        "<Speech><SpeechHere></Speech> Give me a description of the music in this clip."
+    ],
+    "inference_QA": [
+        "<Speech><SpeechHere></Speech> {}"
+    ],
+    "audio_story_telling": [
+        "<Speech><SpeechHere></Speech> Based on the audio, write a story in detail. Your story should be highly related to the audio.",
+        "<Speech><SpeechHere></Speech> Please write a story in detail based on the audio. Your story should contain all the elements in the audio.",
+        "<Speech><SpeechHere></Speech> Please generate a long story that is highly related to the audio."
+    ],
+    "automatic_speech_recognition": [
+        "<Speech><SpeechHere></Speech> Transcribe the following audio to text.",
+	    "<Speech><SpeechHere></Speech> Convert the speech in the audio file into written text.",
+	    "<Speech><SpeechHere></Speech> Please provide a transcription of the audio."
+    ]
+}

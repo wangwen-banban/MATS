@@ -1,0 +1,12 @@
+model:
+  ckpt: "results/MultiTask/audio_free_7B/stage1_model"
+  use_special_token: True
+
+datasets:
+  test_ann_path: "../data/SESA/SESA_test.json"
+  save_file: "SESA_pred"
+  special_token: "[surveillance event]"
+
+run:
+  batch_size_eval: 8
+  evaluate: True 

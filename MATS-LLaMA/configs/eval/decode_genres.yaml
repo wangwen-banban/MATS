@@ -1,0 +1,13 @@
+model:
+  ckpt: "results/MultiTask/audio_free_7B/stage1_model"
+
+datasets:
+  test_ann_path: "../data/music_genres/genres_test.json"
+  # test_ann_path: "../data/music_genres/genres_test_test.json"
+  save_file: "genres_pred"
+  special_token: "[music genres]"
+
+run:
+  batch_size_eval: 16
+  evaluate: True 
+

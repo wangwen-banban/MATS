@@ -1,0 +1,17 @@
+model:
+  # ckpt: "results/MultiTask/audio_free/stage2_model"
+  ckpt: "results/MultiTask/audio_free/stage2_model_only_openAQA"
+  use_special_token: True
+
+
+datasets:
+  test_ann_path: "../data/AIRBench/Chat/Chat_meta.json"
+  save_file: "AIRBench_Chat"
+  special_token: "[open ended]"
+  
+  isAIRBench: True
+
+run:
+  batch_size_eval: 16
+  log_freq: 50
+  evaluate: True
