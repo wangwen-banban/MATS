@@ -24,7 +24,7 @@
 
 - **`Feb. 19th, 2025`:** We released our paper on [Arxiv](https://arxiv.org/abs/2502.13433).
 - **`May. 1, 2025`:** MATS was accepted by **`ICML2025`**
-
+- The weight checkpoint is coming soon.
 ## Table of Contents
 
 - [News](#news)
