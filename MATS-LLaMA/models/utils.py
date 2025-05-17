@@ -47,14 +47,6 @@ def count_parameters(model, name):
     )
 
 
-def get_uniform_ball_noise(input_shape, device, radius=0.1):
-    uniform_noise_ball = torch.randn(input_shape, device=device)  # normal distribution
-    uniform_noise_sphere = torch.nn.functional.normalize(uniform_noise_ball, dim=1)
-    u = torch.rand(input_shape[0], device=device)  # unified distribution
-    u = u ** (1. / input_shape[1])
-    uniform_noise_ball = (uniform_noise_sphere.T * u * radius).T
-    return uniform_noise_ball
-
 def noise_injection(x, noise_variance, device, uniform_noise=False):
     # x: clip text features [B, C]
     variance = noise_variance
@@ -64,10 +56,8 @@ def noise_injection(x, noise_variance, device, uniform_noise=False):
     std = math.sqrt(variance)
     x = F.normalize(x, p=2, dim=-1)
     
-    if uniform_noise:
-        x = x + get_uniform_ball_noise(x.shape, device, radius=std)
-    else:
-        x = x + torch.randn(x.shape, device=device) * std
+   
+    x = x + torch.randn(x.shape, device=device) * std
     
     x = F.normalize(x, p=2, dim=-1)
     return x

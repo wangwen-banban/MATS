@@ -134,11 +134,7 @@ class TransformerMapper(nn.Module):
         self.prefix_const = nn.Parameter(torch.randn(prefix_length, dim_embedding), requires_grad=True)
 
     def forward(self, x):
-        # import pdb; pdb.set_trace()
         x_ = self.linear(x).view(x.shape[0], self.clip_length, -1)
-        if torch.isnan(x_).any():
-            import pdb
-            pdb.set_trace()
         prefix = self.prefix_const.unsqueeze(0).expand(x_.shape[0], *self.prefix_const.shape) # (bs, prefix_len, dim)
         prefix = torch.cat((x_, prefix), dim=1)
         out = self.transformer(prefix)[:, self.clip_length:]
