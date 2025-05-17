@@ -1,14 +1,11 @@
 import logging
-import random
-import re
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import LlamaTokenizer, StoppingCriteriaList
+from transformers import StoppingCriteriaList
 
-from msclap import CLAP
-from .base_model_ import BaseModel
+from .base_model import BaseModel
 
 from .utils import count_parameters, noise_injection, StoppingCriteriaSub, load_memory
 
@@ -124,98 +121,13 @@ class AudioFreeMLLM(BaseModel):
             audio_embeds, audio_atts = self.audio_llm_connector(audio_embeds)
                  
         return audio_embeds, audio_atts
-    
-    def forward(self, samples, mode='train', verbose=True):
-        # prepare prompts
-        special_tokens = samples['special_token'] # bs
-        prompt = []
-        for i, task in enumerate(samples['task']):
-            x = random.choice(self.prompt_dict[task])
-            x = re.sub(r'(<Speech><SpeechHere></Speech>)(.*)', rf'\1 {special_tokens[i]}\2', x) # 在speech之后加上special token
-            prompt.append(x)
-            
-        if 'Q' in samples:
-            prompt = [p.format(q) if '{}' in p else p for p, q in zip(prompt, samples['Q'])] # for the qa pairs, replace the {} with the question
-        
-        # use text/audio encoder to encode text/audio
-        if mode == 'train':
-            captions = samples["caption"]
-            speech_embeds, speech_atts = self.encode_text(captions) #[B, 40, D]
-        else:
-            raw_wav = samples["raw_wav"] #[B, T * sr]
-            
-            speech_embeds, speech_atts = self.encode_audio(raw_wav)
-            
-        # wrap embeds with prompts
-        if self.prompt_dict and prompt:
-            # emebedding the prompt
-            speech_embeds, speech_atts = self.prompt_wrap(speech_embeds, speech_atts, prompt)
-
-        # prepare inputs/targets for LLMs, output + </s>
-        text = [t + self.end_sym for t in samples['output']]
-        # the length more than the max_len, then will be trucated
-        to_regress_tokens = self.llama_tokenizer(text, return_tensors='pt', padding='longest',
-                                                 truncation=True, max_length=self.max_txt_len, 
-                                                 add_special_tokens=False).to(self.device) #[B, L2]
-        
-        to_regress_embeds = self.llama_embed_tokens(to_regress_tokens.input_ids)
-        
-        targets = to_regress_tokens.input_ids.masked_fill(
-            to_regress_tokens.input_ids == self.llama_tokenizer.pad_token_id, -100
-        ) #[B, L2]
-        empty_targets = torch.ones(
-            [speech_atts.shape[0], speech_atts.shape[1] + 1],  # bs, seq_len+1
-            dtype=torch.long
-        ).to(self.device).fill_(-100) #[B, L1+1]
-        
-        targets = torch.cat([empty_targets, targets], dim=1) #[B, 1+L1+L2]
-        
-        # inputs for LLM
-        batch_size = speech_embeds.shape[0]
-        bos = torch.ones(
-            [batch_size, 1], 
-            dtype=to_regress_tokens.input_ids.dtype,
-            device=to_regress_tokens.input_ids.device
-        ) * self.llama_tokenizer.bos_token_id #[B, 1]
-        
-        bos_embeds = self.llama_embed_tokens(bos) # emebedding
-        atts_bos = speech_atts[:, :1]
-        
-        # bos+caption+(output+eos), the caption's attention_mask is all one 
-        inputs_embeds = torch.cat([bos_embeds, speech_embeds, to_regress_embeds], dim=1) #[B, 1+L1+L2, C]
-        attention_mask = torch.cat([atts_bos, speech_atts, to_regress_tokens.attention_mask], dim=1)
-        # calculate loss
-        with self.maybe_autocast():
-            outputs = self.llama_model(
-                inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-                return_dict=True,
-                labels=targets,
-            )
-            loss = outputs.loss
-        if torch.isnan(loss):
-            import pdb; pdb.set_trace()
-        # calculate accuracy
-        if verbose:
-            logits = outputs.logits[:, empty_targets.size(1) -  1: -1] #[B, L2, V], output
-            labels = targets[:, empty_targets.size(1):] #[B, L2]
-            acc, total = self.compute_accuracy(logits, labels)
-            return {'loss': loss, 'acc': acc, 'total': total}
-
-        return {'loss': loss}
 
     def generate(self, samples, generate_cfg, prompt):
-        if self.use_laion:
-            batch_size = len(samples["raw_wav"])
-        else:
-            batch_size = samples["raw_wav"].shape[0]
+       
+        batch_size = samples["raw_wav"].shape[0]
         raw_wav = samples["raw_wav"]
             
-        if self.use_laion:
-            is_longer = samples['is_longer']
-            speech_embeds, speech_atts = self.encode_audio(raw_wav, is_longer)
-        else:
-            speech_embeds, speech_atts = self.encode_audio(raw_wav)
+        speech_embeds, speech_atts = self.encode_audio(raw_wav)
 
         if prompt is not None:
             speech_embeds, speech_atts = self.prompt_wrap(speech_embeds, speech_atts, prompt)
@@ -242,9 +154,7 @@ class AudioFreeMLLM(BaseModel):
             do_sample=generate_cfg.get("do_sample", False),
             min_length=generate_cfg.get("min_length", 1),
             temperature=generate_cfg.get("temperature", 1.0),
-            top_k=generate_cfg.get("top_k", 50),
             no_repeat_ngram_size=generate_cfg.get("no_repeat_ngram_size", 2),
-            top_p=generate_cfg.get("top_p", 0.9),
             repetition_penalty=generate_cfg.get("repetition_penalty", 2.0),
             length_penalty=generate_cfg.get("length_penalty", 1.0),
             attention_mask=attns,

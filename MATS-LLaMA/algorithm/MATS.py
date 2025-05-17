@@ -1,333 +1,136 @@
-import os
-import json
-import time
-import datetime
-from pathlib import Path
+import unidecode
 import logging
 import re
 
 import torch
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from tensorboardX import SummaryWriter
-import shutil
+import numpy as np
+import random
+import torchaudio
 
 from .runner import Runner
 from models import load_model
-from datasets import load_dataset, load_dataloader, load_laion_dataset
-from datasets.clap_dataset import load_audio_into_tensor
 from torch.nn.utils.rnn import pad_sequence
 
-from tools.dist_utils import main_process, is_dist_avail_and_initialized, is_main_process, get_world_size
-from tools.utils import load_json, get_dataloader, prepare_sample, unwrap_dist_model, post_process
-from tools.optims import get_optimizer, LinearWarmupCosineLRScheduler
-from tools.logger import MetricLogger, SmoothedValue
 
+
+all_tasks = {
+    "caption": "<Speech><SpeechHere></Speech> Describe the following audio in a caption.",
+    "cla_label": "<Speech><SpeechHere></Speech> Identify the sounds in the audio clip, only display audio tags.",
+    "musis_caption": "<Speech><SpeechHere></Speech> Listen to this music clip and describe the music.",
+    "QA": "<Speech><SpeechHere></Speech> {}"
+}
+
+def read_and_resample_audio(index, root, annotations, resampling_rate, resample=True):
+    ann = annotations[index]
+    audio, sr = torchaudio.load(ann['audio_id']) # [1, T * sample_rate]    
+    
+    if sr != resampling_rate and resample:
+        resampler = torchaudio.transforms.Resample(sr, resampling_rate)
+        audio = resampler(audio) #[1, T * resample_rate]
+        sr = resampling_rate
+    return audio, sr
+
+
+def load_audio_into_tensor(index, root, annotations, resampling_rate, audio_duration, resample=True):
+    audio, sr = read_and_resample_audio(index, root, annotations, resampling_rate, resample)
+    audio_time_series = audio.reshape(-1) #[T * sr]
+    
+    target_length = audio_duration * sr
+    
+    if target_length >= audio_time_series.size(0):
+        repeat_factor = int(np.ceil(target_length / audio_time_series.size(0)))
+        audio_time_series = audio_time_series.repeat(repeat_factor)
+        audio_time_series = audio_time_series[0:target_length]
+    else:
+        start_index = random.randrange(audio_time_series.size(0) - target_length)
+        audio_time_series = audio_time_series[start_index: start_index + target_length]
+    return torch.FloatTensor(audio_time_series), sr    
+
+def apply_to_sample(f, sample):
+    if len(sample) == 0:
+        return {}
+
+    def _apply(x):
+        if torch.is_tensor(x):
+            return f(x)
+        elif isinstance(x, dict):
+            return {key: _apply(value) for key, value in x.items()}
+        elif isinstance(x, list):
+            return [_apply(x) for x in x]
+        else:
+            return x
+
+    return _apply(sample)
+
+
+def move_to_cuda(sample):
+    def _move_to_cuda(tensor):
+        return tensor.cuda()
+
+    return apply_to_sample(_move_to_cuda, sample)
+
+def prepare_sample(samples, cuda_enabled=True):
+    if cuda_enabled:
+        samples = move_to_cuda(samples)
+
+    return samples
+
+def unwrap_dist_model(model, use_distributed):
+    if use_distributed:
+        return model.module
+    else:
+        return model
+
+def post_process(caption):
+    caption = unidecode.unidecode(caption)
+    caption = caption.replace(',', ' , ') 
+    caption = re.sub(' +', ' ', caption)
+    caption = caption.replace(' ,', ',')
+    caption = caption.strip()
+    return caption
 
 class MATS(Runner):
     def __init__(self, cfg):
         super().__init__(cfg)
         model_config = cfg.config.model
-        data_config = cfg.config.datasets
-        self.isAIRBench = cfg.config.datasets.get('isAIRBench', False)
-        run_config = cfg.config.run
-
-        model_config.evaluation = run_config.get('evaluate', False)
-        self.metrics = {}
-        
-        # build dataset
-        datasets = load_dataset(data_config)
-        
-        
-        self.train_loader, self.valid_loader, self.test_loader = \
-            load_dataloader(datasets=datasets, run_config=run_config, use_distributed=self.use_distributed)
-        logging.info('A train loader have {} iteractions'.format(len(self.train_loader)))
-
-        if self.config.run.epoch_based:
-            self.iters_per_epoch = len(self.train_loader)
-        else:
-            self.iters_per_epoch = self.config.run.iters_per_epoch * self.config.run.accum_grad_iters
-        
-        self.config.run.optims.warmup_steps = self.config.run.optims.warmup_steps * self.config.run.accum_grad_iters
-        logging.info('A train loader need {:.1f} epochs'.format(len(self.train_loader) * 1.0 / self.iters_per_epoch))
-        logging.info('Warmup iteractions: {}'.format(self.config.run.optims.warmup_steps))
-        
-        # build test prompt
-        self.prompt_template = self.config.model.get("prompt_template", "") # "USER: {}\nASSISTANT:"
-        test_prompt_dict = self.config.model.get("test_prompt_path", "") 
-        self.test_prompt_dict = load_json(test_prompt_dict)
-        for k in self.test_prompt_dict.keys():
-            self.test_prompt_dict[k] = self.prompt_template.format(self.test_prompt_dict[k])
+        model_config.evaluation = True
         
         # build model
-        model = load_model(model_config)
+        self.model = load_model(model_config)
         
         # load ckpt
-        # ckpt_path = 'results/CyCLAP/stage2_model_noise_0.005_cyclap_100_epochs/checkpoint_last.pth'
-        # logging.info("Load CLAPMLLP ckpt from: {}".format(ckpt_path))
-        # ckpt = torch.load(ckpt_path, map_location="cpu")
-        # model.load_state_dict(ckpt['model'], strict=False)
-        
-        self.DDP_model(model)
-        
-        # optimizer & scheduler
-        self.optimizer = get_optimizer(self.model, self.config.run.optims)
-        self.scheduler = LinearWarmupCosineLRScheduler(
-            self.optimizer,
-            max_epoch=self.max_epoch,
-            iters_per_epoch=self.iters_per_epoch,
-            min_lr=self.config.run.optims.min_lr,
-            init_lr=self.config.run.optims.init_lr,
-            warmup_steps=self.config.run.optims.warmup_steps,
-            warmup_start_lr=self.config.run.optims.get("warmup_start_lr", -1),
-        )
-
-    def train(self):
-        start_time = time.time()
-        # the upper bound of the loss
-        best_agg_metric = 20
-        best_epoch = 0
-        for cur_epoch in range(self.start_epoch, self.max_epoch):
-            if self.evaluate_only:
-                break
-            
-            # training phase
-            logging.info("Training Phase")
-            train_stats = self.train_epoch(cur_epoch)
-            self.log_stats(train_stats, split_name="train")
-            
-            # validating phase
-            logging.info("Validating Phase")
-            valid_log = self.valid_epoch(cur_epoch, "valid")
-            if valid_log is not None:
-                if is_main_process():
-                    agg_metrics = valid_log['loss']
-                    if agg_metrics < best_agg_metric:
-                        best_agg_metric = agg_metrics
-                        best_epoch = cur_epoch
-                        self.save_checkpoint(cur_epoch, is_best=True)
-                    
-                    valid_log.update({"best_epoch": best_epoch})
-                    self.log_stats(valid_log, split_name="valid")
-            
-            # save the model
-            if cur_epoch % self.save_epoch == 0 or cur_epoch == self.max_epoch - 1:
-                self.save_checkpoint(cur_epoch, is_best=False)
-        
-            self.save_checkpoint(cur_epoch, is_best=False, is_last=True)        
-                
-            #同步所有进程 
-            if self.use_distributed:
-                dist.barrier()
-        
-        total_time = time.time() - start_time
-        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        logging.info("Training time {}".format(total_time_str))
-    
-    def train_epoch(self, epoch):
-        self.model.train()
-        
-        metric_logger = MetricLogger(delimiter="  ")
-        metric_logger.add_meter("lr", SmoothedValue(window_size=20, fmt="{avg:.6f}"))
-        metric_logger.add_meter("loss", SmoothedValue(window_size=20, fmt="{avg:.4f}"))
-        metric_logger.add_meter("acc", SmoothedValue(window_size=20, fmt="{avg:.1f}"))
-        
-        logging.info(
-            "Start training epoch {}, {} iters per inner epoch.".format(
-                epoch, self.iters_per_epoch)
-        )
-        header = "Train: data epoch: [{}]".format(epoch)
-        start_step = epoch * self.iters_per_epoch
-        
-        for i in metric_logger.log_every(range(self.iters_per_epoch), self.config.run.log_freq, header=header, logger=self.log_writter, start_step=start_step):
-            if i >= self.iters_per_epoch:
-                break
-            
-            samples = next(self.train_loader)
-            samples = prepare_sample(samples, cuda_enabled=self.cuda_enabled) # to cuda
-            metric_logger.data_time.update(time.time() - metric_logger.end)
-            
-            self.scheduler.step(cur_epoch=epoch, cur_step=i)
-            
-            with torch.cuda.amp.autocast(enabled=self.use_amp):
-                if self.audiofree:
-                    forward_result = self.model(samples, verbose=True)
-                else:
-                    forward_result = self.model(samples, mode='val', verbose=True)
-            loss = forward_result.get("loss", 0)
-            acc = forward_result.get("acc", 0)
-            
-            if self.use_amp:
-                self.scaler.scale(loss).backward() # mix up the float16 and float32
-            else:
-                loss.backward()
-            
-            if (i + 1) % self.config.run.accum_grad_iters == 0:
-                if self.use_amp:
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    self.optimizer.step()
-                self.optimizer.zero_grad()
-                #self.scheduler.step(cur_epoch=epoch, cur_step=i)
-            
-            metric_logger.update(loss=loss.item())
-            metric_logger.update(acc=acc * 100)
-            metric_logger.update(lr=self.optimizer.param_groups[0]["lr"])
-         
-        metric_logger.synchronize_between_processes()
-        logging.info("Averaged stats: " + str(metric_logger.global_avg()))
-        return {
-            k: "{:.6f}".format(meter.global_avg)
-            for k, meter in metric_logger.meters.items()
-        }
+        if model_config.get('ckpt', "") != "":
+            ckpt_path = model_config.ckpt
+            logging.info("Load MATS ckpt from: {}".format(ckpt_path))
+            ckpt = torch.load(ckpt_path, map_location="cpu")
+            self.model.load_state_dict(ckpt['model'], strict=False)
     
     @torch.no_grad()
-    def valid_epoch(self, epoch, split):
-        model = unwrap_dist_model(self.model, use_distributed=self.use_distributed)
-        model.eval()
-        
-        dataloader = getattr(self, split + "_loader", None)
-        assert dataloader is not None, "{}_loader does not exist.".format(split)
-
-        metric_logger = MetricLogger(delimiter="  ")
-        metric_logger.add_meter("loss", SmoothedValue(window_size=20, fmt="{avg:.4f}"))
-        metric_logger.add_meter("acc", SmoothedValue(window_size=20, fmt="{avg:.1f}"))
-        header = "Eval: data epoch: [{}]".format(epoch)
-        
-        results = []
-        # import pdb; pdb.set_trace()
-        for samples in metric_logger.log_every(dataloader, self.config.run.log_freq, header=header):
-            samples = prepare_sample(samples, cuda_enabled=self.cuda_enabled) # to cuda
-            metric_logger.data_time.update(time.time() - metric_logger.end)
-        
-            with torch.cuda.amp.autocast(enabled=self.use_amp):
-                forward_result = model(samples, mode='val', verbose=True)
-            loss = forward_result.get("loss", 0)
-            acc = forward_result.get("acc", 0)
-            total = forward_result.get("total", 1)
-            
-            metric_logger.update(loss=loss.item())
-            metric_logger.update(acc=acc * 100)
-            
-            res = {
-                "ground_truth": samples["output"],
-                "loss": loss.item(),
-                "acc": acc,
-                "total": total,
-            }
-            
-            results.append(res)
-        
-        metric_logger.synchronize_between_processes()
-        if is_dist_avail_and_initialized():
-            dist.barrier()
-        
-        res = {
-            "loss": torch.tensor(0).float().cuda(),
-            "n_sample": torch.tensor(0).float().cuda(),
-            "correct": torch.tensor(0).float().cuda(),
-            "n_token": torch.tensor(0).float().cuda(),
-        }
-        for item in results:
-            res['loss'] += item['loss'] * len(item['ground_truth'])
-            res['n_sample'] += len(item['ground_truth'])
-            res['correct'] += item['acc'] * item['total']
-            res['n_token'] += item['total']
-        
-        if is_dist_avail_and_initialized():
-            dist.all_reduce(res["loss"])
-            dist.all_reduce(res["n_sample"])
-            dist.all_reduce(res["correct"])
-            dist.all_reduce(res["n_token"])
-        
-        ret = {"epoch": epoch, "loss": 0, "agg_metrics": 0}
-        ret["loss"] = (res["loss"] / res["n_sample"]).item()
-        ret["agg_metrics"] = (res["correct"] / res["n_token"]).item()
-        return ret
-    
-    @torch.no_grad()
-    def generate(self, audio_fp, prompt):
+    def generate(self, audio_fp, task, question=None):
         audios = [{"audio_id":audio_fp}]
+        if task not in all_tasks.keys():
+            raise ValueError("Task {} not in {}".format(task, all_tasks.keys()))
+        prompt = all_tasks[task]
+        if task == "QA":
+            if question is None:
+                raise ValueError("Question is None, but task is QA")
+            prompt = prompt.format(question)
+        prompt = "USER: {}\nASSISTANT:".format(prompt)
         prompts = [prompt]
         samples = {"raw_wav":[]}
         # process the audio
-        audio, sr = load_audio_into_tensor(0, self.config.datasets.root, audios, self.config.datasets.resampling_rate, self.config.datasets.audio_duration, self.config.datasets.resample)
+        audio, sr = load_audio_into_tensor(0, audios, self.config.datasets.resampling_rate, self.config.datasets.audio_duration, self.config.datasets.resample)
         audio = audio.reshape(-1)
         audio = [torch.tensor(audio)]
         raw_wav = pad_sequence(audio, batch_first=True, padding_value=0)
 
         samples = {"raw_wav":raw_wav}
 
-        model = unwrap_dist_model(self.model, use_distributed=self.use_distributed)
-        model.eval()
+        self.model.eval()
 
         samples = prepare_sample(samples, cuda_enabled=self.cuda_enabled) # to cuda
 
-        text = model.generate(samples, self.config.generate, prompts)
+        text = self.model.generate(samples, self.config.generate, prompts)
         response = post_process(text[0])
 
         return response
-
-
-    
-    @torch.no_grad()
-    def valid_generate_epoch(self, epoch, split):
-        save_file = self.config.datasets.save_file + f'_ep_{epoch}'
-        logging.info("saving to {}".format(save_file))
-        
-        model = unwrap_dist_model(self.model, use_distributed=self.use_distributed)
-        model.eval()
-        
-        dataloader = getattr(self, split + "_loader", None)
-        assert dataloader is not None, "{}_loader does not exist.".format(split)
-
-        metric_logger = MetricLogger(delimiter="  ")
-        header = "Eval Generate: data epoch: [{}]".format(epoch)
-        logging.info("\n=====  Generating Parameters    =====")
-        logging.info(self.config.generate)
-        
-        out_captions_pred = []
-        for samples in metric_logger.log_every(dataloader, self.config.run.log_freq, header=header):
-            samples = prepare_sample(samples, cuda_enabled=self.cuda_enabled) # to cuda
-            metric_logger.data_time.update(time.time() - metric_logger.end)
-        
-            prompts = None
-            if model.prompt_dict and self.test_prompt_dict is not None:
-                prompts = []
-                special_tokens = samples['special_token']
-                for i, task in enumerate(samples['task']):
-                    x = self.test_prompt_dict[task]
-                    x = re.sub(r'(<Speech><SpeechHere></Speech>)(.*)', rf'\1 {special_tokens[i]}\2', x)
-                    prompts.append(x)
-                
-                if "Q" in samples:
-                    prompts = [p.format(q) if "{}" in p else p for p, q in zip(prompts, samples["Q"])]
-            
-            # print(prompts[0])
-            text = model.generate(samples, self.config.generate, prompts)
-            
-            if not self.isAIRBench:
-                for i in range(len(samples['id'])):
-                    out_captions_pred.append({
-                        'Q': samples["Q"][i],
-                        'audio_name': samples["id"][i],
-                        "pred": post_process(text[i]),
-                        "target": post_process(samples["output"][i])
-                    })
-            else:
-                for i in range(len(samples['id'])):
-                    out_captions_pred.append({
-                        "meta_info": samples['meta_info'][i],
-                        "question": samples['Q'][i],
-                        "answer_gt": post_process(samples["output"][i]),
-                        "path": samples["id"][i],
-                        "task_name": samples['task_name'][i],
-                        "dataset_name": samples['dataset_name'][i],
-                        "response": post_process(text[i]),
-                        "uniq_id": samples["uniq_id"][i],
-                    })
-            
-            self.save_results(out_captions_pred, self.output_dir, save_file)
-        
-        self.save_results(out_captions_pred, self.output_dir, save_file)

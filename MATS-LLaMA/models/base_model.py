@@ -1,6 +1,5 @@
 import logging
 import contextlib
-import math
 import os
 from einops import rearrange, repeat
 import random
@@ -14,7 +13,6 @@ from transformers.models.bert.configuration_bert import BertConfig
 from msclap import CLAP
 
 from .mapper import build_mapper
-from .Qformer import BertLMHeadModel
 from .modeling_llama import LlamaForCausalLM
 from .utils import StoppingCriteriaSub, load_json, count_parameters
 
@@ -51,32 +49,15 @@ class BaseModel(nn.Module):
         self.lora_alpha = config.get("lora_alpha", 32)
         self.lora_dropout = config.get("lora_dropout", 0.1)
 
-        self.multi_prompt = config.get("multi_prompt", False)
-        self.prompt_path = config.get("prompt_path", "") # this is train prompt path
-        self.prompt_template = config.get("prompt_template", "")
         self.max_txt_len = config.get("max_txt_len", 128)
         self.end_sym = config.get("end_sym", "</s>")
-        self.low_resource = config.get("low_resource", False)
-        self.device_8bit = config.get("device_8bit", 0)
         self.amp = False
-        
-    def prepare_prompts(self):
-        # prepare prompts
-        prompt_dict = {}
-        if self.prompt_path:
-            raw_prompts = load_json(self.prompt_path) # train prompt 
-            for task in raw_prompts.keys():
-                filted_prompts = [raw_prompt for raw_prompt in raw_prompts[task] if '<SpeechHere>' in raw_prompt]
-                prompt_dict[task] = [self.prompt_template.format(p) for p in filted_prompts] # "<User>: prompt\n <ASSISTANT>:"
-            logging.info("Loading training prompts done!")
-        return prompt_dict
     
     def load_llama(self):
         logging.info('loading LLAMA Tokenizer')
         
         llama_tokenizer = LlamaTokenizer.from_pretrained(self.llama_path, use_fast=False) # fast is Rust version
         llama_tokenizer.add_special_tokens({'pad_token': '[PAD]'}) # for variable length
-        # llama_tokenizer.padding_side = 'right'
         if self.config.get('evaluation'):
             llama_tokenizer.padding_side = 'left'
         else:
@@ -84,19 +65,10 @@ class BaseModel(nn.Module):
         logging.info('Padding Strategy is {}'.format(llama_tokenizer.padding_side))
        
         logging.info('Loading LLaMA Model')
-        if self.low_resource:
-            llama_model = LlamaForCausalLM.from_pretrained(
-                self.llama_path,
-                torch_dtype=torch.float16,
-                load_in_8bit=True,
-                device_map={"": self.device_8bit},
-            )
-        else:
-            llama_model = LlamaForCausalLM.from_pretrained(
-                self.llama_path,
-                torch_dtype=torch.float16,
-            )
-        # print(llama_model.config)
+        llama_model = LlamaForCausalLM.from_pretrained(
+            self.llama_path,
+            torch_dtype=torch.float16,
+        )
         
         # this func means that it can change the vocabulary size, not the real embedding
         llama_model.resize_token_embeddings(len(llama_tokenizer)) # vocab_size + added special token
@@ -171,7 +143,6 @@ class BaseModel(nn.Module):
         memory_bank = torch.load(self.save_memory_dir)
         if isinstance(memory_bank, list):
             memory_bank = torch.stack(memory_bank)
-            # memory_bank = memory_bank[:math.ceil(len(memory_bank)*0.001)]
             memory_bank = memory_bank[:self.mb_number]
             random.shuffle(memory_bank)
         logging.info('there are {:.2}k text embedding!'.format(len(memory_bank) / 1e3))
@@ -192,9 +163,7 @@ class BaseModel(nn.Module):
         all_text_embedding = torch.load(self.save_memory_dir)
         if isinstance(all_text_embedding, list):
             all_text_embedding = torch.stack(all_text_embedding)
-            # choose 10%
             random.shuffle(all_text_embedding)
-            # all_text_embedding = all_text_embedding[:math.ceil(len(all_text_embedding)*0.001)]
             all_text_embedding = all_text_embedding[:self.mb_number]
         dim = all_text_embedding.shape[-1]
         logging.info('there {} samples in memory bank'.format(len(all_text_embedding)))
@@ -206,33 +175,27 @@ class BaseModel(nn.Module):
         clusters_ = [[] for _ in range(nums_center)]
         
         for iter in range(self.iter_kmeans):
-            # import pdb; pdb.set_trace()
             diffs = rearrange(all_text_embedding, "n d -> n () d") - rearrange(
                 means, "c d -> () c d"
             )
-            dists = -(diffs ** 2).sum(dim=-1) # 默认会去掉dim的维度
+            dists = -(diffs ** 2).sum(dim=-1)
 
-            buckets = dists.max(dim=-1).indices # 每个样本属于的蔟下标
-            bins = torch.bincount(buckets, minlength=nums_center) # 记录每个蔟的样本个数
+            buckets = dists.max(dim=-1).indices 
+            bins = torch.bincount(buckets, minlength=nums_center)
             zero_mask = bins == 0
-            bins_min_clamped = bins.masked_fill(zero_mask, 1) # 防止除以0
+            bins_min_clamped = bins.masked_fill(zero_mask, 1)
 
             new_means = buckets.new_zeros(nums_center, dim, dtype=dtype)
             new_means.scatter_add_(0, repeat(buckets, "n -> n d", d=dim), all_text_embedding)
             new_means = new_means / bins_min_clamped[..., None]
 
-            means = torch.where(zero_mask[..., None], means, new_means) # 被选择过的蔟中心被new_means替代
+            means = torch.where(zero_mask[..., None], means, new_means)
         
         # final cluster
         for embedding in all_text_embedding:
             distances = torch.norm(means - embedding, dim=1)
             min_index = torch.argmin(distances)
             clusters_[min_index].append(embedding)
-        
-        # shuffle all clusters_ and only store 10%
-        # for i in range(len(clusters_)):
-        #     random.shuffle(clusters_[i])
-        #     clusters_[i] = clusters_[i][: math.ceil(len(clusters_[i]) * 0.1)]
 
         logging.info('k-means done!')
         return clusters_, means

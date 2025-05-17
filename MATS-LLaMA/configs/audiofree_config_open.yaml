@@ -1,23 +1,23 @@
 model:
   name: "audiofree"
   # paths
-  llama_path: "/data/wangwen/HUG/lmsys-vicuna-7b-v1.5"
-  clap_path: "/data/wangwen/HUG/msclap/CLAP_weights_2023.pth"
+  llama_path: "xxx"
+  clap_path: "xxx"
 
-  ckpt: "" # if not "", load model from ckpt for training or evaluation
+  ckpt: "xxx"
 
   freeze_clap: True
 
   # Memory Bank setting
   use_memory_bank: False
   is_kmeans: True
-  save_memory_dir: "/data/wangwen/dataset/audio/100epochs_cyclap_no_audiosetcaps_memory_bank.pt"
+  save_memory_dir: "xxx"
   k_nums: 32
   lambda: 0.3
   group_nums: 100
   iter_kmeans: 10
   temperature: 10
-  number: 5172 # 0.001 train set 5172
+  number: 5172 #
 
   # mapper
   clap_dim: 1024
@@ -37,151 +37,17 @@ model:
   lora_alpha: 32
   lora_dropout: 0.1
 
-  multi_prompt: True
-  prompt_template: "USER: {}\nASSISTANT:"
-  prompt_path: "prompts/train_prompt.json"
-  test_prompt_path: "prompts/test_prompt.json"
   max_txt_len: 150
   end_sym: "</s>"
 
 datasets:
+  test_file: "xxx"
+  task: "caption"
+  question: None
   audiofree: True
-  root: "/data/wangwen/dataset/audio"
-
-  train_data:
-    emotion: # 16k
-      path: "../data/CREMA-D/emotion_close_gpt4.json"
-      sample_ratio: 70
-      special_token: "[emotion event]"
-    VOCAL:
-      path: "../data/VocalSound/vocalsound_tr_gpt4.json" #16K; 7-class
-      sample_ratio: 20
-      special_token: "[vocal event]"
-    salmonn_caption:
-      path: "../data/Salmonn/salmonn_audio_caption.json" #434K
-      sample_ratio: 200
-      special_token: "[audio caption]"
-    audiocaps_caption:
-      path: "../data/Salmonn/audiocaps.json" #47K
-      sample_ratio: 40
-      special_token: "[audio caption audiocaps]"
-    clotho_caption:
-      path: "../data/Salmonn/clotho.json" #19K
-      sample_ratio: 40
-      special_token: "[audio caption clotho]"
-    MACS:
-      path: "../data/macs/macs_train_cap.json" # 17.27k
-      sample_ratio: 50
-      special_token: "[audio caption]"
-    AudioSet:
-      path: "../data/AudioSets/as_strong_train_cla.json" #101K
-      sample_ratio: 50
-      special_token: "[multi events]"
-    FSD50K:
-      path: "../data/FSD50k/fsd50k_tr_val_gpt4.json" #77K; 200-class
-      sample_ratio: 50
-      special_token: "[multi events]"
-    VGGSound:
-      path: "../data/VGGSound/vggsound_tr_gpt4.json" #97K; 310-class
-      sample_ratio: 50
-      special_token: "[single event]"
-    DCASE:
-      path: "../data/DCASE_2017/dcase17_gpt4.json" #16K; 17-class
-      sample_ratio: 20
-      special_token: "[single event]"
-    ESC:
-      path: "../data/ESC-50/esc_gpt4.json" #22K; 50-class
-      sample_ratio: 20
-      special_token: "[single event]"
-    UrbanSound:
-      path: "../data/UrbanSound8K/urbansound_gpt4.json" # 19K; 10-class
-      sample_ratio: 20
-      special_token: "[single event]"
-    TUT:
-      path: "../data/TUT/tut_tr_gpt4.json" #14K; 15-class
-      sample_ratio: 20
-      special_token: "[scene event]"
-    SESA:
-      path: "../data/SESA/SESA_tr_gpt4.json" # 7K; 4-class
-      sample_ratio: 20
-      special_token: "[surveillance event]"
-    BJO:
-      path: "../data/beijing_opera/beijing_opera_gpt4.json" #12K; 4-class
-      sample_ratio: 20
-      special_token: "[instruction event]"
-    Genres:
-      path: "../data/music_genres/genres_tr_gpt4.json" # 20K; 10-class
-      sample_ratio: 20
-      special_token: "[music genres]"
-    GamaMusic:
-      path: "../data/openAQAData/open_ended/gama_music_close_gpt4.json" # 465k
-      sample_ratio: 180
-      special_token: "[music classification]"
-    MusicCaps:
-      path: "../data/MusicCaps/MusicCaps_train.json" #2.6K
-      sample_ratio: 50
-      special_token: "[music caption]"
-    Magna:
-      path: "../data/openAQAData/captioning_music_close.json" # 26k
-      sample_ratio: 50
-      special_token: "[music caption]"
-    SDD:
-      path: "../data/SDD/SDD_music_caption.json" # SDD 1.11k
-      sample_ratio: 50
-      special_token: "[music caption]"
-    ClothoAQA:
-      path: "../data/clotho_aqa/clotho_aqa_tr_val_clean_caption.json" #20K
-      sample_ratio: 50
-      special_token: "[audio qa]"
-    open_ended:
-      path: "../data/openAQAData/combine_aqa_except_no_a_final.json" # 2547k
-      sample_ratio: 300
-      special_token: "[open ended]"
-    music_aqa:
-      path: "../data/MusicQA/conbine_music_aq.json" # 1207k
-      sample_ratio: 300
-      special_token: "[open ended]"
-
-  valid_ann_path: "../data/AudioCaps/AudioCaps_audio_stage1_test.json"
-  test_ann_path: "../data/AudioCaps/AudioCaps_audio_stage1_test.json"
-  special_token: "[audio caption audiocaps]"
-  save_file: "audiocaps_pred"
-
   resampling_rate: 44100
   audio_duration: 7
   resample: True
-
-run:
-  start_epoch: 1
-  seed: 42
-  output_dir: "results/CyCLAP/stage2_model_noise_0.005_cyclap_100_epochs"
-  evaluate: False
-
-  log_freq: 50
-  epoch_based: False
-  iters_per_epoch: 3000
-  accum_grad_iters: 2
-  batch_size_train: 12
-  batch_size_eval: 8
-  num_workers: 8
-
-  save_epoch: 29
-
-  device: "cuda"
-  use_distributed: True
-  amp: False
-  world_size: 2
-  dist_url: "env://"
-
-  # optimizer & scheduler
-  optims:
-    max_epoch: 30
-    warmup_steps: 3000
-    warmup_start_lr: 1e-7
-    init_lr: 3e-5
-    min_lr: 0
-    weight_decay: 0.05
-    beta2: 0.999
 
 generate:
   max_new_tokens: 200
@@ -189,8 +55,6 @@ generate:
   do_sample: False
   min_length: 1
   temperature: 1.0
-  top_k: 50
-  top_p: 0.9
   no_repeat_ngram_size: 2
   repetition_penalty: 2.0
   length_penalty: 1.0

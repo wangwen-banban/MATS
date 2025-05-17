@@ -23,9 +23,12 @@
 ## News
 
 - **` Feb. 19th, 2025`:** We released our paper on [Arxiv](https://arxiv.org/abs/2502.13433).
+- **`May. 1, 2025`:** MATS was accepted by **`ICML2025`**
 
 ## Table of Contents
 
+- [News](#news)
+- [Table of Contents](#table-of-contents)
 - [Abstract](#abstract)
 - [Install](#install)
 - [Evaluation](#evaluation)
@@ -45,9 +48,27 @@ Large audio-language models (LALMs), built upon powerful Large Language Models (
 </div>
 
 ## Install
-
+```bash
+conda create -n mats python==3.9
+conda activate mats
+pip install -r requirements.txt
+```
 ## Evaluation
-
+1. Please modify the datasets in the file `configs/audiofree_config_open.yaml` according to the given example. Note that only the following tasks are supported: `[caption, cla_label, music_caption, QA]`.
+   ```yaml
+    test_file: "path"
+    task: "caption"
+    question: None
+   ```
+   ```yaml
+    test_file: "path"
+    task: "QA"
+    question: "What xxx"
+   ```
+2. run
+   ```bash
+   python test.py
+   ```
 ## Citation
 
 If you find MATS is useful in your research or applications, please consider giving us a star 🌟 and citing it by the following BibTeX entry.
