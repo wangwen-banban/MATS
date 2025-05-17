@@ -3,7 +3,7 @@
     <!-- Left: Logo and MATS -->
     <div style="display: flex; align-items: center; margin-right: 20px; text-align: left;">
         <img src="./asset/mat.png" alt="Logo" style="width: 50px; height: 50px; margin-right: 10px;"/>
-        <h1 style="margin: 0;">MATS: An Audio Language Model under Text-only Supervision</h1>
+        <h1 style="margin: 0;">[ICML25]MATS: An Audio Language Model under Text-only Supervision</h1>
     </div>
 </div>
 
@@ -22,7 +22,7 @@
 
 ## News
 
-- **` Feb. 19th, 2025`:** We released our paper on [Arxiv](https://arxiv.org/abs/2502.13433).
+- **`Feb. 19th, 2025`:** We released our paper on [Arxiv](https://arxiv.org/abs/2502.13433).
 - **`May. 1, 2025`:** MATS was accepted by **`ICML2025`**
 
 ## Table of Contents
