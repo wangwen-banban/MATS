@@ -18,9 +18,6 @@ class AudioFreeMLLM(BaseModel):
         self.uniform_noise = config.get("uniform_noise", False)
         logging.info('noise variance: {}'.format(self.noise_variance))
         
-        # prepare prompts
-        self.prompt_dict = self.prepare_prompts() # contains the <SpeechHere>
-        
         # loading llama
         self.llama_model, self.llama_tokenizer = self.load_llama()
 
@@ -49,19 +46,6 @@ class AudioFreeMLLM(BaseModel):
             audio_embeds = self.audio_llama_proj(audio_embeds)
             
             audio_atts = torch.ones(audio_embeds.size()[:-1], dtype=torch.long).to(audio_embeds.device) #[B, prefix_length]
-        
-        return audio_embeds, audio_atts
-    
-    def encode_text(self, captions):
-        # captions: a list of captions
-        with self.maybe_autocast():
-            text_embeds = self.clap_wrapper.get_text_embeddings(captions) #[B, D] # if use laion is 512
-            text_embeds = F.normalize(text_embeds, p=2, dim=-1)
-            
-            text_embeds = noise_injection(text_embeds, self.noise_variance, self.device, self.uniform_noise)
-            text_embeds = F.normalize(text_embeds, p=2, dim=-1)
-            
-            audio_embeds, audio_atts = self.audio_llm_connector(text_embeds)
         
         return audio_embeds, audio_atts
 
