@@ -15,8 +15,7 @@
 
 [![MATS](https://img.shields.io/badge/Paper-MATS-2b9348.svg?logo=arXiv)](https://arxiv.org/abs/2502.13433)&nbsp;
 
-<!-- [![huggingface weights](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-mmMamba_linear-yellow)](https://huggingface.co/hustvl/mmMamba-linear)&nbsp;
-[![huggingface weights](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-mmMamba_hybrid-yellow)](https://huggingface.co/hustvl/mmMamba_hybrid)&nbsp; -->
+[![huggingface weights](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-MATS_LLaMA-yellow)](https://huggingface.co/LBanBan/MAT)&nbsp;
 
 </div>
 
@@ -24,7 +23,7 @@
 
 - **`Feb. 19th, 2025`:** We released our paper on [Arxiv](https://arxiv.org/abs/2502.13433).
 - **`May. 1, 2025`:** MATS was accepted by **`ICML2025`**
-- The weight checkpoint is coming soon.
+- We released the weight checkpoint on [Huggingface](https://huggingface.co/LBanBan/MATS).
 ## Table of Contents
 
 - [News](#news)
@@ -32,6 +31,7 @@
 - [Abstract](#abstract)
 - [Install](#install)
 - [Evaluation](#evaluation)
+- [Acknowledgement](#acknowledgement)
 - [Citation](#citation)
 
 ## Abstract
@@ -53,6 +53,7 @@ conda create -n mats python==3.9
 conda activate mats
 pip install -r requirements.txt
 ```
+And you can download the [CLAP](https://huggingface.co/microsoft/msclap) and [LLaMA](https://huggingface.co/lmsys/vicuna-7b-v1.5) checkpoint.
 ## Evaluation
 1. Please modify the datasets in the file `configs/audiofree_config_open.yaml` according to the given example. Note that only the following tasks are supported: `[caption, cla_label, music_caption, QA]`.
    ```yaml
@@ -69,6 +70,9 @@ pip install -r requirements.txt
    ```bash
    python test.py
    ```
+
+## Acknowledgement
+- [SALMONN](https://github.com/bytedance/SALMONN/tree/salmonn): MATS-LLaMA is built upon the SALMONN codebases. 
 ## Citation
 
 If you find MATS is useful in your research or applications, please consider giving us a star 🌟 and citing it by the following BibTeX entry.
