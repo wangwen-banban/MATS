@@ -7,7 +7,7 @@
     </div>
 </div>
 
-[Wen Wang](https://github.com/wangwen-banban)<sup>1</sup>, [Ruibing Hou](https://scholar.google.com/citations?user=VfS4cisAAAAJ&hl=zh-CN&oi=ao)<sup>1,:email:</sup>, [Hong Chang](https://scholar.google.com/citations?user=LX6MnNsAAAAJ&hl=zh-CN)<sup>1,2</sup>, [Shiguang Shan](https://scholar.google.com/citations?user=Vkzd7MIAAAAJ&hl=zh-CN)<sup>1,2</sup>, [Xilin Chen](https://scholar.google.com/citations?user=vVx2v20AAAAJ&hl=zh-CN)<sup>1,2</sup>
+[Wen Wang](https://github.com/wangwen-banban)<sup>1</sup>, [Ruibing Hou](https://scholar.google.com/citations?user=VfS4cisAAAAJ&hl=zh-CN&oi=ao)<sup>1, :email:</sup>, [Hong Chang](https://scholar.google.com/citations?user=LX6MnNsAAAAJ&hl=zh-CN)<sup>1,2</sup>, [Shiguang Shan](https://scholar.google.com/citations?user=Vkzd7MIAAAAJ&hl=zh-CN)<sup>1,2</sup>, [Xilin Chen](https://scholar.google.com/citations?user=vVx2v20AAAAJ&hl=zh-CN)<sup>1,2</sup>
 
 <sup>1</sup> Key Laboratory of Intelligent Information Processing of Chinese Academy of Sciences (CAS), Institute of Computing Technology, CAS, China <sup>2</sup> University of Chinese Academy of Sciences, China
 
